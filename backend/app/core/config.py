@@ -1,10 +1,11 @@
 import os
 import json
-from typing import List, Union
-from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from typing import List
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(case_sensitive=True, extra="ignore", env_file=".env")
+
     PROJECT_NAME: str = "FLOWCARE — AI-Powered Hospital Patient Flow & Healthcare Management System"
     API_V1_STR: str = "/api"
     SECRET_KEY: str = os.getenv("SECRET_KEY", "flowcare-super-secure-production-grade-jwt-secret-key-2026")
@@ -30,30 +31,21 @@ class Settings(BaseSettings):
     CLOUD_API_KEY: str = os.getenv("CLOUD_API_KEY", "flowcare_cloud_sync_api_key_2026_demo")
 
     # CORS Configuration
-    CORS_ORIGINS: List[str] = ["*"]
-
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
-        if isinstance(v, str):
-            v = v.strip()
-            if not v:
-                return ["*"]
-            if v.startswith("[") and v.endswith("]"):
-                try:
-                    return json.loads(v)
-                except Exception:
-                    pass
-            if "," in v:
-                return [i.strip() for i in v.split(",") if i.strip()]
-            return [v]
-        elif isinstance(v, list):
-            return v
-        return ["*"]
-
-    class Config:
-        case_sensitive = True
-        env_file = ".env"
+    @property
+    def CORS_ORIGINS(self) -> List[str]:
+        raw = os.getenv("CORS_ORIGINS", "*").strip()
+        if not raw:
+            return ["*"]
+        if raw.startswith("[") and raw.endswith("]"):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [str(item) for item in parsed]
+            except Exception:
+                pass
+        if "," in raw:
+            return [i.strip() for i in raw.split(",") if i.strip()]
+        return [raw]
 
     def get_database_url(self) -> str:
         if self.DATABASE_URL:
@@ -64,4 +56,5 @@ class Settings(BaseSettings):
             return f"mysql+pymysql://{self.MYSQL_USER}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DB}?charset=utf8mb4"
 
 settings = Settings()
+
 
