@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const envBase = import.meta.env.VITE_API_BASE_URL ? import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '') : '';
+const API_BASE_URL = envBase ? (envBase.endsWith('/api') ? envBase : `${envBase}/api`) : '/api';
 
 let activeAuthToken = null;
 
