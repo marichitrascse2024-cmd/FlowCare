@@ -50,7 +50,9 @@ def get_engine():
             logger.error(f"Failed to connect to MySQL with URL. Falling back to SQLite for local development: {e}")
     
     # Fallback to SQLite
-    sqlite_url = "sqlite:///./flowcare.db"
+    import os
+    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "flowcare.db")).replace("\\", "/")
+    sqlite_url = f"sqlite:///{db_path}"
     logger.info(f"Using SQLite database at {sqlite_url}")
     return create_engine(
         sqlite_url,

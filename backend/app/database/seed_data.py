@@ -248,11 +248,12 @@ def seed_database():
             db.add(u)
             db.flush()
 
-        doc = db.query(Doctor).filter(Doctor.user_id == u.id).first()
+        doc_code = f"DOC-2026-{100 + idx}"
+        doc = db.query(Doctor).filter((Doctor.user_id == u.id) | (Doctor.doctor_code == doc_code)).first()
         if not doc:
             doc = Doctor(
                 user_id=u.id,
-                doctor_code=f"DOC-2026-{100 + idx}",
+                doctor_code=doc_code,
                 specialization=d_info["specialization"],
                 qualification=d_info["qualification"],
                 experience_years=d_info["experience"],
@@ -478,7 +479,7 @@ def seed_database():
             db.add(u)
             db.flush()
 
-        pat = db.query(Patient).filter(Patient.user_id == u.id).first()
+        pat = db.query(Patient).filter((Patient.user_id == u.id) | (Patient.patient_code == p_info["code"])).first()
         if not pat:
             pat = Patient(
                 user_id=u.id,

@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const API_BASE_URL = '/api';
 
 let activeAuthToken = null;
 
@@ -54,6 +54,9 @@ async function request(endpoint, options = {}) {
 export const api = {
   // Auth
   login: (credentials) => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
+  faceLogin: (imageData, role) => request('/auth/face-login', { method: 'POST', body: JSON.stringify({ image_data: imageData, role }) }),
+  registerFace: (imageData, userId) => request('/auth/register-face', { method: 'POST', body: JSON.stringify({ image_data: imageData, user_id: userId }) }),
+  googleLogin: (payload) => request('/auth/google-login', { method: 'POST', body: JSON.stringify(payload) }),
   register: (patientData) => request('/auth/register', { method: 'POST', body: JSON.stringify(patientData) }),
   getMe: () => request('/auth/me'),
   changePassword: (data) => request('/auth/change-password', { method: 'POST', body: JSON.stringify(data) }),

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -5,6 +6,7 @@ from app.database.database import get_db
 from app.core.security import get_password_hash
 from app.core.deps import require_roles, get_current_user
 from app.models.user import User, RoleEnum, UserStatusEnum
+from app.models.patient import Patient
 from app.schemas.user import UserCreate, UserUpdate, UserOut
 
 router = APIRouter(prefix="/users", tags=["User Management (Admin)"])
@@ -51,6 +53,21 @@ def create_user(
         status=UserStatusEnum.ACTIVE
     )
     db.add(new_user)
+    db.flush()
+
+    if new_user.role == RoleEnum.PATIENT:
+        patient_count = db.query(Patient).count()
+        patient_code = f"PAT-2026-{1001 + patient_count}"
+        from app.services.qr_service import qr_service
+        qr_token = qr_service.generate_patient_qr_token(patient_code)
+        patient = Patient(
+            user_id=new_user.id,
+            patient_code=patient_code,
+            qr_token=qr_token,
+            qr_created_at=datetime.now(timezone.utc)
+        )
+        db.add(patient)
+
     db.commit()
     db.refresh(new_user)
     return new_user

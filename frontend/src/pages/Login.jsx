@@ -14,12 +14,14 @@ import {
   QrCode,
   Sparkles,
   RefreshCw,
-  UserCog
+  UserCog,
+  ScanFace
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PasswordInput } from '../components/PasswordInput';
 import { Modal } from '../components/Modal';
 import { PatientQRScanner } from '../components/PatientQRScanner';
+import { FaceAuthModal } from '../components/FaceAuthModal';
 
 const ROLES = [
   { id: 'PATIENT', label: 'Patient', icon: User, title: 'Patient Login', subtitle: 'Access your electronic health records, appointments, and QR identity' },
@@ -36,6 +38,9 @@ export const Login = ({ onSwitchToRegister }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Face Recognition Modal
+  const [showFaceModal, setShowFaceModal] = useState(false);
 
   // QR Login Modal
   const [showQRLoginModal, setShowQRLoginModal] = useState(false);
@@ -184,17 +189,17 @@ export const Login = ({ onSwitchToRegister }) => {
           </div>
         )}
 
-        {/* 2. Login Form */}
+        {/* 2. Login Form: Option 1 (Username + Password) */}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label className="form-label">Email Address / Username</label>
             <div style={{ position: 'relative' }}>
               <Mail size={18} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '11px' }} />
               <input
-                type="email"
+                type="text"
                 className="form-control"
                 style={{ paddingLeft: '2.4rem' }}
-                placeholder={selectedRole === 'PATIENT' ? 'patient@flowcare.demo' : (selectedRole === 'DOCTOR' ? 'doctor@flowcare.demo' : `${selectedRole.toLowerCase()}@flowcare.com`)}
+                placeholder={selectedRole === 'PATIENT' ? 'Email or Patient ID (e.g. arjun.kumar@flowcare.demo / PAT1001)' : (selectedRole === 'DOCTOR' ? 'doctor@flowcare.demo' : `${selectedRole.toLowerCase()}@flowcare.com`)}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -228,21 +233,48 @@ export const Login = ({ onSwitchToRegister }) => {
           <button
             type="submit"
             className="btn btn-primary"
-            style={{ width: '100%', padding: '0.75rem', marginBottom: selectedRole === 'PATIENT' ? '0.65rem' : '0' }}
+            style={{ width: '100%', padding: '0.75rem', marginBottom: '0.75rem', fontWeight: 700 }}
             disabled={loading}
           >
-            {loading ? 'Authenticating...' : `Sign In as ${currentRoleConfig.label}`}
+            {loading ? 'Authenticating...' : `Sign In with Password`}
           </button>
 
-          {/* Universal Patient QR Login (For Patient Role) */}
+          {/* Patient Alternative Auth Methods (Face Recognition & QR Login) */}
           {selectedRole === 'PATIENT' && (
             <>
+              {/* Alternative Face Recognition Divider */}
               <div style={{ display: 'flex', alignItems: 'center', margin: '0.85rem 0', gap: '0.5rem' }}>
                 <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>OR</span>
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>OR AUTHENTICATE WITH</span>
                 <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
               </div>
 
+              {/* Option 2: Face Recognition Button */}
+              <button
+                type="button"
+                onClick={() => setShowFaceModal(true)}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  padding: '0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid #bae6fd',
+                  background: '#f0f9ff',
+                  color: '#0284c7',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <ScanFace size={18} color="#0284c7" />
+                <span>Face Recognition (Live Camera / Photo)</span>
+              </button>
+
+              {/* Universal Patient QR Login */}
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -250,9 +282,9 @@ export const Login = ({ onSwitchToRegister }) => {
                   setQrLoginError('');
                   setShowQRLoginModal(true);
                 }}
-                style={{ width: '100%', padding: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderColor: '#0284c7', color: '#0284c7', background: '#f0f9ff', fontWeight: 600 }}
+                style={{ width: '100%', padding: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderColor: '#e2e8f0', color: '#475569', background: '#f8fafc', fontWeight: 600, fontSize: '0.82rem', marginTop: '0.5rem' }}
               >
-                <QrCode size={18} /> Login with Patient QR
+                <QrCode size={16} /> Login with Patient QR
               </button>
             </>
           )}
@@ -271,6 +303,13 @@ export const Login = ({ onSwitchToRegister }) => {
           </div>
         )}
       </div>
+
+      {/* Face Recognition Modal */}
+      <FaceAuthModal
+        isOpen={showFaceModal}
+        onClose={() => setShowFaceModal(false)}
+        selectedRole={selectedRole}
+      />
 
       {/* Universal Patient QR Login Modal */}
       <Modal

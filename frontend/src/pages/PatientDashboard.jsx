@@ -15,7 +15,8 @@ import {
   RefreshCw,
   QrCode,
   HeartPulse,
-  ShieldCheck
+  ShieldCheck,
+  ScanFace
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { DashboardCard } from '../components/DashboardCard';
@@ -24,6 +25,7 @@ import { AIWaitTimeCard } from '../components/AIWaitTimeCard';
 import { AISchedulingModal } from '../components/AISchedulingModal';
 import QRCodeModal from '../components/QRCodeModal';
 import RiskAssessmentModal from '../components/RiskAssessmentModal';
+import { RegisterFaceModal } from '../components/RegisterFaceModal';
 import { Modal } from '../components/Modal';
 import { api } from '../services/api';
 
@@ -47,6 +49,9 @@ export const PatientDashboard = ({ onNavigate }) => {
 
   // AI Disease Risk Modal
   const [showRiskModal, setShowRiskModal] = useState(false);
+
+  // Face Registration Modal
+  const [showFaceModal, setShowFaceModal] = useState(false);
 
   // Payment Modal
   const [showPayModal, setShowPayModal] = useState(false);
@@ -283,6 +288,36 @@ export const PatientDashboard = ({ onNavigate }) => {
           </button>
         </div>
 
+        {/* Face Recognition Pass Card */}
+        <div className="card" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #f0fdfa 100%)', borderColor: '#a7f3d0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <div style={{ background: '#059669', color: '#ffffff', padding: '0.5rem', borderRadius: '0.5rem' }}>
+              <ScanFace size={20} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: '#0f172a' }}>Face Recognition</h4>
+                <Badge variant={user?.face_auth_enabled ? 'success' : 'warning'}>
+                  {user?.face_auth_enabled ? 'Active' : 'Not Registered'}
+                </Badge>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b' }}>AI Biometric Authentication</p>
+            </div>
+          </div>
+          <p style={{ fontSize: '0.82rem', color: '#334155', marginBottom: '1rem' }}>
+            {user?.face_auth_enabled 
+              ? 'Face Recognition is active for your account. You can log in securely using your webcam or photo.' 
+              : 'Register your face using your webcam or photo upload to enable 1-click Face Recognition login.'}
+          </p>
+          <button 
+            className="btn btn-outline btn-sm"
+            onClick={() => setShowFaceModal(true)}
+            style={{ width: '100%', borderColor: '#059669', color: '#059669' }}
+          >
+            <ScanFace size={14} /> {user?.face_auth_enabled ? 'Update Face Photo' : 'Register Face Recognition'}
+          </button>
+        </div>
+
         {/* AI Disease Risk Card */}
         <div className="card" style={{ background: 'linear-gradient(135deg, #faf5ff 0%, #fdf2f8 100%)', borderColor: '#f5d0fe' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
@@ -468,6 +503,13 @@ export const PatientDashboard = ({ onNavigate }) => {
           </div>
         </form>
       </Modal>
+
+      {/* Register Face Recognition Modal */}
+      <RegisterFaceModal
+        isOpen={showFaceModal}
+        onClose={() => setShowFaceModal(false)}
+        onSuccess={() => loadPatientData(true)}
+      />
     </div>
   );
 };

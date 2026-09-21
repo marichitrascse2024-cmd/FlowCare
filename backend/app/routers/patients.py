@@ -1,4 +1,5 @@
 from typing import List, Optional
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from app.database.database import get_db
@@ -115,6 +116,20 @@ def create_patient(
         role=RoleEnum.PATIENT,
         status=UserStatusEnum.ACTIVE
     )
+
+    if patient_in.face_image:
+        from app.services.face_service import face_service
+        try:
+            img = face_service.decode_image_data(patient_in.face_image)
+            vec = face_service.extract_face_vector(img)
+            user.face_embedding = face_service.serialize_vector(vec)
+            user.face_auth_enabled = True
+            user.face_registered_at = datetime.now(timezone.utc)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to process face photo: {str(e)}")
+
     db.add(user)
     db.flush()
 

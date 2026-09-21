@@ -1,12 +1,14 @@
 from datetime import date, datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 class PatientBase(BaseModel):
     date_of_birth: Optional[date] = None
     gender: Optional[str] = "Other"
     blood_group: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
     medical_history_notes: Optional[str] = None
@@ -16,9 +18,10 @@ class PatientBase(BaseModel):
 
 class PatientCreate(PatientBase):
     full_name: str
-    email: EmailStr
+    email: str
     phone: Optional[str] = None
     password: Optional[str] = "Patient@123"
+    face_image: Optional[str] = None
 
 class PatientUpdate(PatientBase):
     full_name: Optional[str] = None

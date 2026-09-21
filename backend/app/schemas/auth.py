@@ -1,9 +1,9 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from app.models.user import RoleEnum, UserStatusEnum
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
     role: Optional[str] = None
 
@@ -20,6 +20,7 @@ class TokenResponse(BaseModel):
     doctor_code: Optional[str] = None
     doctor_specialization: Optional[str] = None
     department: Optional[str] = None
+    face_auth_enabled: bool = False
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
@@ -39,6 +40,7 @@ class CurrentUserResponse(BaseModel):
     doctor_code: Optional[str] = None
     doctor_specialization: Optional[str] = None
     department: Optional[str] = None
+    face_auth_enabled: bool = False
 
     class Config:
         from_attributes = True
