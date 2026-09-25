@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Activity, 
   Lock, 
@@ -57,6 +57,13 @@ export const Login = ({ onSwitchToRegister }) => {
 
   const currentRoleConfig = ROLES.find(r => r.id === selectedRole) || ROLES[0];
 
+  // Ensure email and password fields start completely empty on page load
+  useEffect(() => {
+    setEmail('');
+    setPassword('');
+    setError('');
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !password) {
@@ -66,9 +73,12 @@ export const Login = ({ onSwitchToRegister }) => {
     setLoading(true);
     setError('');
     try {
-      await login(email, password, selectedRole);
+      await login(email, password);
+      setEmail('');
+      setPassword('');
     } catch (err) {
       setError(err.message || 'Invalid credentials or role mismatch.');
+      setPassword('');
     } finally {
       setLoading(false);
     }
@@ -190,7 +200,7 @@ export const Login = ({ onSwitchToRegister }) => {
         )}
 
         {/* 2. Login Form: Option 1 (Username + Password) */}
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} autoComplete="off">
           <div className="form-group">
             <label className="form-label">Email Address / Username</label>
             <div style={{ position: 'relative' }}>
@@ -199,9 +209,10 @@ export const Login = ({ onSwitchToRegister }) => {
                 type="text"
                 className="form-control"
                 style={{ paddingLeft: '2.4rem' }}
-                placeholder={selectedRole === 'PATIENT' ? 'Email or Patient ID (e.g. arjun.kumar@flowcare.demo / PAT1001)' : (selectedRole === 'DOCTOR' ? 'doctor@flowcare.demo' : `${selectedRole.toLowerCase()}@flowcare.com`)}
+                placeholder={selectedRole === 'PATIENT' ? 'Email or Patient ID (e.g. arjun.kumar@flowcare.demo / PAT1001)' : (selectedRole === 'DOCTOR' ? 'dr.rajesh@flowcare.com / DOC-2026-101' : `${selectedRole.toLowerCase()}@flowcare.com`)}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="off"
                 required
               />
             </div>
@@ -212,6 +223,7 @@ export const Login = ({ onSwitchToRegister }) => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
+            autoComplete="new-password"
             required
           />
 

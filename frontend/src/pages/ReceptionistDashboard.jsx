@@ -257,7 +257,16 @@ export const ReceptionistDashboard = ({ onNavigate }) => {
               <tbody>
                 {appointments.map((appt) => (
                   <tr key={appt.id}>
-                    <td><strong>{appt.time_slot}</strong></td>
+                    <td>
+                      {appt.doctor_delay_minutes > 0 && appt.shifted_time_slot ? (
+                        <div style={{ fontSize: '0.85rem' }}>
+                          <div style={{ color: '#64748b', fontSize: '0.72rem', textDecoration: 'line-through' }}>Original: {appt.time_slot}</div>
+                          <div style={{ color: '#d97706', fontWeight: 700 }}>Revised: {appt.shifted_time_slot}</div>
+                        </div>
+                      ) : (
+                        <strong>{appt.time_slot}</strong>
+                      )}
+                    </td>
                     <td>
                       <div>{appt.patient_name}</div>
                       <small style={{ color: '#64748b' }}>{appt.patient_code}</small>

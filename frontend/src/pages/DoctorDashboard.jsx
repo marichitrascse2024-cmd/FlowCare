@@ -15,7 +15,8 @@ import {
   QrCode,
   HeartPulse,
   Lock,
-  ShieldCheck
+  ShieldCheck,
+  Video
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { DashboardCard } from '../components/DashboardCard';
@@ -24,6 +25,7 @@ import { AISummaryModal } from '../components/AISummaryModal';
 import { PatientQRScanner } from '../components/PatientQRScanner';
 import RiskAssessmentModal from '../components/RiskAssessmentModal';
 import { Modal } from '../components/Modal';
+import { VideoCallModal } from '../components/VideoCallModal';
 import { api } from '../services/api';
 
 export const DoctorDashboard = ({ onNavigate }) => {
@@ -36,11 +38,33 @@ export const DoctorDashboard = ({ onNavigate }) => {
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [targetPatientForRisk, setTargetPatientForRisk] = useState(null);
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const [activeVideoCallAppt, setActiveVideoCallAppt] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState('');
   const [advancing, setAdvancing] = useState(false);
+  const [checkingIn, setCheckingIn] = useState(false);
+  const [checkInMessage, setCheckInMessage] = useState('');
+  const [doctorProfile, setDoctorProfile] = useState(null);
+
+  const handleDoctorCheckIn = async () => {
+    setCheckingIn(true);
+    setCheckInMessage('');
+    try {
+      const res = await api.doctorCheckIn();
+      const checkInDate = res.check_in_time ? new Date(res.check_in_time) : new Date();
+      const timeFormatted = checkInDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const delayInfo = res.doctor_delay_minutes > 0 ? ` (+${res.doctor_delay_minutes} min late delay)` : ' (On Time)';
+      setCheckInMessage(`Checked in successfully at ${timeFormatted}${delayInfo}. Doctor arrival recorded.`);
+      await loadDoctorData(true);
+    } catch (err) {
+      alert(err.message || 'Failed to complete doctor check-in.');
+    } finally {
+      setCheckingIn(false);
+    }
+  };
 
   // Consultation Record Modal
   const [showConsultModal, setShowConsultModal] = useState(false);
@@ -62,12 +86,16 @@ export const DoctorDashboard = ({ onNavigate }) => {
       setRefreshError('');
     }
     try {
-      const [queueData, apptsData] = await Promise.all([
+      const [queueData, apptsData, profileData] = await Promise.all([
         api.getQueue(),
-        api.getAppointments({ appointment_date: new Date().toISOString().split('T')[0] })
+        api.getAppointments({ appointment_date: new Date().toISOString().split('T')[0] }),
+        api.getDoctorSelfProfile().catch(() => null)
       ]);
       setQueue(queueData);
       setAppointments(apptsData);
+      if (profileData) {
+        setDoctorProfile(profileData);
+      }
       const active = queueData.find(q => q.status === 'IN_CONSULTATION');
       setActiveConsultation(active || null);
     } catch (err) {
@@ -139,6 +167,14 @@ export const DoctorDashboard = ({ onNavigate }) => {
         </div>
         <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
           <button 
+            className="btn btn-primary btn-sm"
+            onClick={handleDoctorCheckIn}
+            disabled={checkingIn}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            <UserCheck size={14} /> {checkingIn ? 'Checking In...' : 'Check In / Mark Arrival'}
+          </button>
+          <button 
             className="btn btn-secondary btn-sm"
             onClick={() => setShowQRScanner(true)}
             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', borderColor: '#0d9488', color: '#0d9488' }}
@@ -189,11 +225,83 @@ export const DoctorDashboard = ({ onNavigate }) => {
         </div>
       </div>
 
+      {checkInMessage && (
+        <div style={{ padding: '0.75rem 1rem', background: '#d1fae5', borderLeft: '4px solid #10b981', color: '#065f46', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <CheckCircle2 size={18} />
+          <span>{checkInMessage}</span>
+        </div>
+      )}
+
       {refreshError && (
         <div style={{ padding: '0.75rem 1rem', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
           {refreshError}
         </div>
       )}
+
+      {/* Doctor Arrival & Schedule Delay Status Card */}
+      <div className="card" style={{ 
+        marginBottom: '1.5rem', 
+        background: doctorProfile?.doctor_delay_minutes > 0 
+          ? 'linear-gradient(135deg, #fffbe6 0%, #fff7ed 100%)' 
+          : 'linear-gradient(135deg, #f0fdf4 0%, #f8fafc 100%)', 
+        borderColor: doctorProfile?.doctor_delay_minutes > 0 ? '#fde68a' : '#bbf7d0' 
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '12px',
+              background: doctorProfile?.last_check_in_at 
+                ? (doctorProfile?.doctor_delay_minutes > 0 ? '#fef3c7' : '#d1fae5') 
+                : '#e2e8f0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: doctorProfile?.last_check_in_at 
+                ? (doctorProfile?.doctor_delay_minutes > 0 ? '#d97706' : '#059669') 
+                : '#64748b'
+            }}>
+              {doctorProfile?.doctor_delay_minutes > 0 ? <AlertTriangle size={24} /> : <UserCheck size={24} />}
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>
+                  Doctor Arrival & Check-In Status
+                </h4>
+                {doctorProfile?.last_check_in_at ? (
+                  <span className={`badge ${doctorProfile?.doctor_delay_minutes > 0 ? 'badge-warning' : 'badge-success'}`}>
+                    {doctorProfile?.doctor_delay_minutes > 0 ? `Checked In (Late: +${doctorProfile.doctor_delay_minutes}m)` : 'Checked In (On Time)'}
+                  </span>
+                ) : (
+                  <span className="badge badge-secondary">Not Checked In Today</span>
+                )}
+              </div>
+              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: '#475569' }}>
+                {doctorProfile?.last_check_in_at ? (
+                  <>Check-In Time: <strong>{new Date(doctorProfile.last_check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong></>
+                ) : (
+                  <>Please mark your arrival for today's clinical shift to sync appointment schedules.</>
+                )}
+                {doctorProfile?.doctor_delay_minutes > 0 && (
+                  <span style={{ marginLeft: '0.75rem', color: '#d97706', fontWeight: 700 }}>
+                    • Appointments auto-shifted by +{doctorProfile.doctor_delay_minutes} mins
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+          <button 
+            className={`btn ${doctorProfile?.last_check_in_at ? 'btn-outline' : 'btn-primary'}`}
+            onClick={handleDoctorCheckIn}
+            disabled={checkingIn}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}
+          >
+            <UserCheck size={16} />
+            {checkingIn ? 'Updating Check-In...' : (doctorProfile?.last_check_in_at ? 'Re-Check In / Update Arrival' : 'Check In Now')}
+          </button>
+        </div>
+      </div>
 
       {/* Active Patient In Consultation Card */}
       {activeConsultation ? (
@@ -212,6 +320,19 @@ export const DoctorDashboard = ({ onNavigate }) => {
               </p>
             </div>
             <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <button 
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setActiveVideoCallAppt({
+                    id: activeConsultation.appointment_id || activeConsultation.id,
+                    patient_name: activeConsultation.patient_name
+                  });
+                  setShowVideoModal(true);
+                }}
+                style={{ borderColor: '#0284c7', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <Video size={14} /> Start Video Call
+              </button>
               <button 
                 className="btn btn-secondary btn-sm"
                 onClick={() => handleOpenAISummary(activeConsultation.patient_id, activeConsultation.patient_name)}
@@ -368,12 +489,22 @@ export const DoctorDashboard = ({ onNavigate }) => {
                   <th>Patient</th>
                   <th>Complaint</th>
                   <th>Status</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {appointments.map((a) => (
                   <tr key={a.id}>
-                    <td><strong>{a.time_slot}</strong></td>
+                    <td>
+                      {a.doctor_delay_minutes > 0 && a.shifted_time_slot ? (
+                        <div style={{ fontSize: '0.85rem' }}>
+                          <div style={{ color: '#64748b', fontSize: '0.75rem' }}>Original: {a.time_slot}</div>
+                          <div style={{ color: '#d97706', fontWeight: 700 }}>Revised: {a.shifted_time_slot}</div>
+                        </div>
+                      ) : (
+                        <strong>{a.time_slot}</strong>
+                      )}
+                    </td>
                     <td>
                       <div>{a.patient_name}</div>
                       <small style={{ color: '#64748b' }}>{a.patient_code}</small>
@@ -382,11 +513,26 @@ export const DoctorDashboard = ({ onNavigate }) => {
                       {a.chief_complaint || 'Routine consultation'}
                     </td>
                     <td><Badge status={a.status} /></td>
+                    <td>
+                      <button 
+                        className="btn btn-primary btn-sm"
+                        style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                        onClick={() => {
+                          setActiveVideoCallAppt({
+                            id: a.id,
+                            patient_name: a.patient_name
+                          });
+                          setShowVideoModal(true);
+                        }}
+                      >
+                        <Video size={13} /> Start Video Call
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {appointments.length === 0 && (
                   <tr>
-                    <td colSpan="4" style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
+                    <td colSpan="5" style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
                       No assigned appointments scheduled for today.
                     </td>
                   </tr>
@@ -411,6 +557,19 @@ export const DoctorDashboard = ({ onNavigate }) => {
         onClose={() => setShowRiskModal(false)}
         initialPatientId={targetPatientForRisk?.id}
         initialPatientName={targetPatientForRisk?.name}
+      />
+
+      {/* WebRTC Video Call Signaling Modal */}
+      <VideoCallModal
+        isOpen={showVideoModal}
+        onClose={() => {
+          setShowVideoModal(false);
+          setActiveVideoCallAppt(null);
+        }}
+        appointment_id={activeVideoCallAppt?.id}
+        patientName={activeVideoCallAppt?.patient_name || 'Patient'}
+        doctorName={user?.full_name || 'Dr. Specialist'}
+        userRole="DOCTOR"
       />
 
       {/* Consultation Record Modal */}

@@ -1,19 +1,66 @@
 import io
 import json
+import os
 import base64
+import urllib.request
+import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
 class FaceRecognitionService:
     """
-    Robust AI Face Detection and Illumination-Invariant Facial Verification Engine.
+    Production Deep AI Face Recognition Engine using OpenCV YuNet Face Detector
+    (with 5-landmark alignment) & SFace Deep Feature Extractor.
+    
     Features:
-    1. Multi-face vs single-face vs no-face detection via chrominance and spatial clustering.
-    2. Automatic EXIF rotation correction for mobile/webcam uploads.
-    3. Dynamic facial skin-centroid bounding box alignment.
-    4. Multi-scale spatial intensity grid + Micro-texture Local Binary Patterns (LBP).
-    5. Directional spatial gradient energy distributions.
+    1. EXIF orientation correction for mobile/webcam uploads.
+    2. YuNet 5-landmark facial detection and canonical crop alignment.
+    3. SFace 128-dimensional deep feature embedding generation.
+    4. Versioned JSON embedding serialization (version 2).
+    5. Backward compatibility support for legacy template fallback.
     """
+
+    # Configurable matching threshold for SFace (Cosine Similarity range: 0.0 to 1.0)
+    # SFace benchmark threshold for intra-person verification across lighting/cameras is 0.55
+    FACE_SIMILARITY_THRESHOLD = 0.55
+
+    def __init__(self):
+        self.weights_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'models', 'weights'))
+        self.yunet_path = os.path.join(self.weights_dir, 'face_detection_yunet_2023mar.onnx')
+        self.sface_path = os.path.join(self.weights_dir, 'face_recognition_sface_2021dec.onnx')
+        self._detector = None
+        self._recognizer = None
+
+    def _ensure_models(self):
+        """Ensures YuNet and SFace models exist; downloads from official OpenCV releases if missing."""
+        os.makedirs(self.weights_dir, exist_ok=True)
+        
+        yunet_url = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+        sface_url = "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx"
+
+        if not os.path.exists(self.yunet_path) or os.path.getsize(self.yunet_path) < 10000:
+            print("[FACE-SERVICE] Downloading YuNet face detector model...")
+            urllib.request.urlretrieve(yunet_url, self.yunet_path)
+
+        if not os.path.exists(self.sface_path) or os.path.getsize(self.sface_path) < 1000000:
+            print("[FACE-SERVICE] Downloading SFace face recognizer model...")
+            urllib.request.urlretrieve(sface_url, self.sface_path)
+
+        if self._detector is None:
+            self._detector = cv2.FaceDetectorYN.create(
+                model=self.yunet_path,
+                config="",
+                input_size=(300, 300),
+                score_threshold=0.60,
+                nms_threshold=0.30,
+                top_k=5000
+            )
+
+        if self._recognizer is None:
+            self._recognizer = cv2.FaceRecognizerSF.create(
+                model=self.sface_path,
+                config=""
+            )
 
     @staticmethod
     def decode_image_data(image_data_str: str) -> Image.Image:
@@ -51,121 +98,49 @@ class FaceRecognitionService:
         except Exception:
             raise ValueError("Please upload a valid JPG, JPEG, PNG, or WEBP image.")
 
-    @classmethod
-    def extract_face_vector(cls, img: Image.Image) -> np.ndarray:
+    def extract_face_vector(self, img: Image.Image) -> np.ndarray:
         """
-        Extracts an illumination-invariant, orientation-resilient 1792-dimensional
-        feature representation with high inter-person discriminative power.
+        Detects, aligns, and extracts a normalized 128-dimensional SFace deep feature vector.
+        Performs 5-landmark alignment using YuNet and enforces strict single-face & quality checks.
         """
+        self._ensure_models()
+
         rgb_img = img.convert("RGB")
         w, h = rgb_img.size
 
-        if w < 30 or h < 30:
-            raise ValueError("No face detected. Please try again.")
+        if w < 40 or h < 40:
+            raise ValueError("Image resolution is too low. Please try again with a clearer photo.")
 
-        # Variance check on frame (detect completely blank/white/black images)
-        gray_full = rgb_img.convert("L")
-        arr_full = np.asarray(gray_full, dtype=np.float32)
-        if float(np.var(arr_full)) < 15.0:
-            raise ValueError("No face detected. Please try again.")
+        bgr_img = cv2.cvtColor(np.array(rgb_img), cv2.COLOR_RGB2BGR)
 
-        # Check for multiple faces via skin-chrominance horizontal distribution
-        scale = min(1.0, 160.0 / max(w, h))
-        proc_w, proc_h = int(w * scale), int(h * scale)
-        small_img = rgb_img.resize((proc_w, proc_h), Image.Resampling.BILINEAR)
-        s_arr = np.asarray(small_img, dtype=np.float32)
-        r, g, b = s_arr[:, :, 0], s_arr[:, :, 1], s_arr[:, :, 2]
-        cr = 128.0 + 0.5 * r - 0.418688 * g - 0.081312 * b
-        cb = 128.0 - 0.168736 * r - 0.331264 * g + 0.5 * b
-        skin_mask = (r > 40) & (g > 20) & (b > 10) & (r > g) & (cr >= 120) & (cr <= 190) & (cb >= 65) & (cb <= 145)
+        # Update input size for current image
+        self._detector.setInputSize((w, h))
 
-        col_proj = np.sum(skin_mask, axis=0)
-        max_col = np.max(col_proj) if len(col_proj) > 0 else 0
-        if max_col > 12:
-            active_cols = col_proj > (max_col * 0.25)
-            comps = []
-            in_comp = False
-            start_c = 0
-            for i, val in enumerate(active_cols):
-                if val and not in_comp:
-                    in_comp = True
-                    start_c = i
-                elif not val and in_comp:
-                    in_comp = False
-                    if (i - start_c) >= int(proc_w * 0.10):
-                        comps.append((start_c, i))
-            if in_comp and (proc_w - start_c) >= int(proc_w * 0.10):
-                comps.append((start_c, proc_w))
+        _, faces = self._detector.detect(bgr_img)
 
-            if len(comps) >= 2 and (comps[1][0] - comps[0][1]) >= 2:
-                raise ValueError("Please make sure only one face is visible.")
+        if faces is None or len(faces) == 0:
+            raise ValueError("No face detected. Please ensure your face is clearly visible and well-lit.")
 
-        # Dynamic facial centroid estimation from skin mask
-        skin_ys, skin_xs = np.where(skin_mask)
-        if len(skin_xs) > 40:
-            cx = float(np.mean(skin_xs)) / scale
-            cy = float(np.mean(skin_ys)) / scale
-        else:
-            cx = w / 2.0
-            cy = h * 0.45 if h > w * 1.15 else h / 2.0
+        if len(faces) > 1:
+            raise ValueError("Multiple faces detected. Please make sure only one face is visible.")
 
-        min_dim = min(w, h)
-        box_size = min_dim * 0.85
-        half = box_size / 2.0
-        x1 = max(0, int(cx - half))
-        y1 = max(0, int(cy - half))
-        x2 = min(w, int(cx + half))
-        y2 = min(h, int(cy + half))
+        face = faces[0]
+        confidence = float(face[14])
+        bbox_w, bbox_h = float(face[2]), float(face[3])
 
-        cropped = gray_full.crop((x1, y1, x2, y2)).resize((128, 128), Image.Resampling.LANCZOS)
-        c_arr = np.asarray(cropped, dtype=np.float32)
+        if confidence < 0.60:
+            raise ValueError("No clear face detected. Please face the camera directly under good lighting.")
 
-        # 1. Zero mean, unit variance luminance normalization (eliminates lighting shifts)
-        norm = (c_arr - np.mean(c_arr)) / (np.std(c_arr) + 1e-6)
+        if bbox_w < 35 or bbox_h < 35:
+            raise ValueError("Face is too far away. Please move closer to the camera.")
 
-        # 2. 16x16 spatial intensity grid (256 features)
-        g16 = np.asarray(cropped.resize((16, 16), Image.Resampling.BILINEAR), dtype=np.float32)
-        g16_norm = (g16 - np.mean(g16)) / (np.std(g16) + 1e-6)
+        # Perform 5-landmark facial alignment & crop
+        aligned_face = self._recognizer.alignCrop(bgr_img, face)
 
-        # 3. Micro-texture Local Binary Patterns (LBP) across 8x8 spatial blocks (64 cells * 16 bins = 1024 features)
-        padded = np.pad(norm, ((1, 1), (1, 1)), mode='edge')
-        center = padded[1:-1, 1:-1]
-        lbp_code = np.zeros((128, 128), dtype=np.uint8)
-        neighbors = [
-            padded[0:-2, 0:-2], padded[0:-2, 1:-1], padded[0:-2, 2:],
-            padded[1:-1, 2:],   padded[2:, 2:],     padded[2:, 1:-1],
-            padded[2:, 0:-2],   padded[1:-1, 0:-2]
-        ]
-        for p, n in enumerate(neighbors):
-            lbp_code += ((n >= center).astype(np.uint8) << p)
+        # Extract 128-dimensional SFace deep feature embedding
+        feature_embedding = self._recognizer.feature(aligned_face)
+        vec = feature_embedding.flatten()
 
-        spatial_lbp = []
-        for r_idx in range(8):
-            for c_idx in range(8):
-                cell = lbp_code[r_idx*16:(r_idx+1)*16, c_idx*16:(c_idx+1)*16]
-                hist, _ = np.histogram(cell, bins=16, range=(0, 256))
-                hist_norm = hist.astype(np.float32) / (np.sum(hist) + 1e-6)
-                spatial_lbp.append(hist_norm)
-        lbp_features = np.concatenate(spatial_lbp) # 1024
-
-        # 4. Fine-Grained Horizontal & Vertical Facial Gradients (16x16 gradient maps = 256 + 256 = 512 features)
-        grad_x = np.abs(np.diff(norm, axis=1)) # 128 x 127
-        grad_y = np.abs(np.diff(norm, axis=0)) # 127 x 128
-        gx_img = Image.fromarray(grad_x.astype(np.float32)).resize((16, 16), Image.Resampling.BILINEAR)
-        gy_img = Image.fromarray(grad_y.astype(np.float32)).resize((16, 16), Image.Resampling.BILINEAR)
-        gx_vec = np.asarray(gx_img, dtype=np.float32).flatten()
-        gy_vec = np.asarray(gy_img, dtype=np.float32).flatten()
-        gx_norm = (gx_vec - np.mean(gx_vec)) / (np.std(gx_vec) + 1e-6)
-        gy_norm = (gy_vec - np.mean(gy_vec)) / (np.std(gy_vec) + 1e-6)
-
-        # 5. Composite Feature Vector: 256 + 1024 + 256 + 256 = 1792 dimensions
-        vec = np.concatenate([
-            g16_norm.flatten(),
-            lbp_features * 1.5,
-            gx_norm,
-            gy_norm
-        ])
-        
         # Unit L2 normalization
         vec_norm = np.linalg.norm(vec)
         if vec_norm > 0:
@@ -175,33 +150,44 @@ class FaceRecognitionService:
 
     @classmethod
     def compute_similarity(cls, vec1: np.ndarray, vec2: np.ndarray) -> float:
-        """Computes Cosine Similarity between two normalized face vectors (range: 0.0 to 1.0)."""
+        """Computes Cosine Similarity between two normalized 128-dim SFace vectors (range: 0.0 to 1.0)."""
         if vec1 is None or vec2 is None or len(vec1) == 0 or len(vec2) == 0:
             return 0.0
 
         if len(vec1) != len(vec2):
-            common_dim = max(len(vec1), len(vec2))
-            x1 = np.linspace(0, 1, len(vec1))
-            x2 = np.linspace(0, 1, len(vec2))
-            x_new = np.linspace(0, 1, common_dim)
-            v1 = np.interp(x_new, x1, vec1)
-            v2 = np.interp(x_new, x2, vec2)
-            v1 = v1 / (np.linalg.norm(v1) + 1e-6)
-            v2 = v2 / (np.linalg.norm(v2) + 1e-6)
-            dot = float(np.dot(v1, v2))
-            return max(0.0, min(1.0, dot))
+            return 0.0
 
         dot = float(np.dot(vec1, vec2))
         return max(0.0, min(1.0, dot))
 
     @classmethod
-    def serialize_vector(cls, vec: np.ndarray) -> str:
-        """Serializes numpy vector to JSON string for database storage."""
-        return json.dumps(vec.tolist())
+    def serialize_vector(cls, vec: np.ndarray, version: int = 2) -> str:
+        """Serializes numpy vector to versioned JSON string for database storage."""
+        payload = {
+            "version": version,
+            "model": "SFace",
+            "vector": vec.tolist()
+        }
+        return json.dumps(payload)
 
     @classmethod
-    def deserialize_vector(cls, json_str: str) -> np.ndarray:
-        """Deserializes JSON string to numpy vector."""
-        return np.array(json.loads(json_str), dtype=np.float32)
+    def deserialize_vector(cls, json_str: str) -> tuple:
+        """
+        Deserializes JSON string to a tuple: (version: int, vector: np.ndarray).
+        Supports both version 2 SFace JSON objects and legacy version 1 JSON lists.
+        """
+        if not json_str:
+            raise ValueError("Empty face embedding string.")
+
+        parsed = json.loads(json_str)
+        if isinstance(parsed, dict) and "version" in parsed:
+            ver = parsed.get("version", 2)
+            vec = np.array(parsed.get("vector", []), dtype=np.float32)
+            return (ver, vec)
+
+        if isinstance(parsed, list):
+            return (1, np.array(parsed, dtype=np.float32))
+
+        raise ValueError("Unknown face embedding format.")
 
 face_service = FaceRecognitionService()

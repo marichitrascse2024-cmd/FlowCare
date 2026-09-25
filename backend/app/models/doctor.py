@@ -17,6 +17,7 @@ class Doctor(Base):
     biography = Column(Text, nullable=True)
     is_available = Column(Boolean, default=True, nullable=False)
     average_consultation_time = Column(Integer, default=15, nullable=False) # in minutes
+    last_check_in_at = Column(DateTime, nullable=True) # Doctor check-in timestamp
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 

@@ -30,6 +30,7 @@ def serialize_doctor(d: Doctor) -> DoctorOut:
         biography=d.biography,
         is_available=d.is_available,
         average_consultation_time=d.average_consultation_time,
+        last_check_in_at=d.last_check_in_at,
         schedules=[DoctorScheduleOut(
             id=s.id,
             doctor_id=s.doctor_id,

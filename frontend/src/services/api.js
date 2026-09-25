@@ -102,6 +102,7 @@ export const api = {
 
   // Doctor Specific Portal (Determined by Auth Token)
   getDoctorSelfProfile: () => request('/doctor/profile'),
+  doctorCheckIn: () => request('/doctor/check-in', { method: 'POST' }),
   getDoctorSelfAppointments: (date = '') => request(`/doctor/appointments${date ? `?appointment_date=${date}` : ''}`),
   getDoctorSelfQueue: (status = '') => request(`/doctor/queue${status ? `?status=${status}` : ''}`),
   getDoctorSelfPatients: (search = '') => request(`/doctor/patients${search ? `?search=${encodeURIComponent(search)}` : ''}`),
@@ -164,5 +165,22 @@ export const api = {
   markAllNotificationsRead: () => request('/notifications/read-all', { method: 'PUT' }),
 
   // Reports & Analytics
-  getDashboardAnalytics: () => request('/reports/dashboard')
+  getDashboardAnalytics: () => request('/reports/dashboard'),
+
+  // Scan Scheduling
+  getScanSchedules: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/scan-schedules${qs ? `?${qs}` : ''}`);
+  },
+  getScanSchedule: (id) => request(`/scan-schedules/${id}`),
+  createScanSchedule: (data) => request('/scan-schedules', { method: 'POST', body: JSON.stringify(data) }),
+  updateScanSchedule: (id, data) => request(`/scan-schedules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  cancelScanSchedule: (id) => request(`/scan-schedules/${id}/cancel`, { method: 'PUT' }),
+  getScanSlots: (date, scanType) => {
+    const params = new URLSearchParams();
+    if (date) params.append('date', date);
+    if (scanType) params.append('scan_type', scanType);
+    const qs = params.toString();
+    return request(`/scan-schedules/slots${qs ? `?${qs}` : ''}`);
+  }
 };

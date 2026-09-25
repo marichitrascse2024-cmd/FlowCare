@@ -16,16 +16,18 @@ import {
   QrCode,
   HeartPulse,
   ShieldCheck,
-  ScanFace
+  ScanFace,
+  Video
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { DashboardCard } from '../components/DashboardCard';
 import { Badge } from '../components/Badge';
 import { AIWaitTimeCard } from '../components/AIWaitTimeCard';
 import { AISchedulingModal } from '../components/AISchedulingModal';
-import QRCodeModal from '../components/QRCodeModal';
 import RiskAssessmentModal from '../components/RiskAssessmentModal';
+import QRCodeModal from '../components/QRCodeModal';
 import { RegisterFaceModal } from '../components/RegisterFaceModal';
+import { VideoCallModal } from '../components/VideoCallModal';
 import { Modal } from '../components/Modal';
 import { api } from '../services/api';
 
@@ -37,15 +39,15 @@ export const PatientDashboard = ({ onNavigate }) => {
   const [records, setRecords] = useState([]);
   const [bills, setBills] = useState([]);
   const [doctors, setDoctors] = useState([]);
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const [activeVideoCallAppt, setActiveVideoCallAppt] = useState(null);
+  const [showQRModal, setShowQRModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState('');
 
   // AI Booking Wizard Modal
   const [showSchedulingModal, setShowSchedulingModal] = useState(false);
-
-  // Dynamic QR Code Modal
-  const [showQRModal, setShowQRModal] = useState(false);
 
   // AI Disease Risk Modal
   const [showRiskModal, setShowRiskModal] = useState(false);
@@ -235,8 +237,8 @@ export const PatientDashboard = ({ onNavigate }) => {
       <div className="dashboard-grid">
         <DashboardCard
           title="Upcoming Appointment"
-          value={upcomingAppt ? upcomingAppt.time_slot : 'None'}
-          subtitle={upcomingAppt ? `${upcomingAppt.appointment_date} with ${upcomingAppt.doctor_name}` : 'No active booking'}
+          value={upcomingAppt ? (upcomingAppt.doctor_delay_minutes > 0 && upcomingAppt.shifted_time_slot ? upcomingAppt.shifted_time_slot : upcomingAppt.time_slot) : 'None'}
+          subtitle={upcomingAppt ? `${upcomingAppt.appointment_date} with ${upcomingAppt.doctor_name}${upcomingAppt.doctor_delay_minutes > 0 ? ` (Revised from ${upcomingAppt.time_slot})` : ''}` : 'No active booking'}
           icon={Calendar}
           color="primary"
         />
@@ -265,26 +267,26 @@ export const PatientDashboard = ({ onNavigate }) => {
 
       {/* Advanced Features Quick Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
-        {/* Dynamic QR Code Card */}
-        <div className="card" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%)', borderColor: '#bae6fd' }}>
+        {/* My Patient QR Pass Card */}
+        <div className="card" style={{ background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)', borderColor: '#bae6fd' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
             <div style={{ background: '#0284c7', color: '#ffffff', padding: '0.5rem', borderRadius: '0.5rem' }}>
               <QrCode size={20} />
             </div>
             <div>
-              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: '#0f172a' }}>Dynamic Health QR</h4>
-              <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b' }}>HMAC Tokenized Patient Pass</p>
+              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: '#0f172a' }}>My Patient QR</h4>
+              <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b' }}>Universal Patient Identity</p>
             </div>
           </div>
           <p style={{ fontSize: '0.82rem', color: '#334155', marginBottom: '1rem' }}>
-            Present your unique dynamic QR code at reception or doctor stations for instant admission without waiting.
+            View and download your digital patient QR pass for rapid check-in at clinic reception or triage kiosks.
           </p>
           <button 
             className="btn btn-outline btn-sm"
             onClick={() => setShowQRModal(true)}
             style={{ width: '100%', borderColor: '#0284c7', color: '#0284c7' }}
           >
-            <QrCode size={14} /> View & Download QR Code
+            <QrCode size={14} /> View My QR Code
           </button>
         </div>
 
@@ -345,10 +347,45 @@ export const PatientDashboard = ({ onNavigate }) => {
       {/* Main Grid: AI Wait Predictor + Upcoming Actions */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
         {upcomingAppt ? (
-          <AIWaitTimeCard
-            doctorId={upcomingAppt.doctor_id}
-            patientId={user?.patient_id}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <AIWaitTimeCard
+              doctorId={upcomingAppt.doctor_id}
+              patientId={user?.patient_id}
+            />
+            <div 
+              className="card" 
+              style={{ 
+                background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', 
+                color: '#ffffff', 
+                borderColor: '#38bdf8', 
+                borderWidth: '1px' 
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#38bdf8', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <Video size={16} /> LIVE TELECONSULTATION STATION
+                  </div>
+                  <h4 style={{ margin: '0.35rem 0 0 0', fontSize: '1.1rem', fontWeight: 800 }}>
+                    Appointment #{upcomingAppt.id} with {upcomingAppt.doctor_name}
+                  </h4>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
+                    Slot: {upcomingAppt.doctor_delay_minutes > 0 && upcomingAppt.shifted_time_slot ? upcomingAppt.shifted_time_slot : upcomingAppt.time_slot} • Encrypted WebRTC Room
+                  </p>
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setActiveVideoCallAppt(upcomingAppt);
+                    setShowVideoModal(true);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', borderColor: '#38bdf8', fontWeight: 700 }}
+                >
+                  <Video size={16} /> Join Video Call
+                </button>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: '2.5rem' }}>
             <Calendar size={40} color="#0284c7" style={{ marginBottom: '0.75rem' }} />
@@ -447,15 +484,6 @@ export const PatientDashboard = ({ onNavigate }) => {
         }}
       />
 
-      {/* Dynamic QR Code Modal */}
-      <QRCodeModal
-        isOpen={showQRModal}
-        onClose={() => setShowQRModal(false)}
-        patientId={user?.patient_id}
-        patientName={user?.full_name}
-        patientCode={user?.patient_code}
-      />
-
       {/* AI Disease Risk Assessment Modal */}
       <RiskAssessmentModal
         isOpen={showRiskModal}
@@ -509,6 +537,28 @@ export const PatientDashboard = ({ onNavigate }) => {
         isOpen={showFaceModal}
         onClose={() => setShowFaceModal(false)}
         onSuccess={() => loadPatientData(true)}
+      />
+
+      {/* WebRTC Video Call Signaling Modal */}
+      <VideoCallModal
+        isOpen={showVideoModal}
+        onClose={() => {
+          setShowVideoModal(false);
+          setActiveVideoCallAppt(null);
+        }}
+        appointment_id={activeVideoCallAppt?.id}
+        patientName={user?.full_name || 'Patient'}
+        doctorName={activeVideoCallAppt?.doctor_name || 'Dr. Specialist'}
+        userRole="PATIENT"
+      />
+
+      {/* Patient QR Code Modal */}
+      <QRCodeModal
+        isOpen={showQRModal}
+        onClose={() => setShowQRModal(false)}
+        patientId={user?.patient_id}
+        patientName={user?.full_name}
+        patientCode={user?.patient_code}
       />
     </div>
   );

@@ -82,15 +82,17 @@ export const Navbar = () => {
 
       <div className="navbar-actions">
         {/* Universal Patient QR Scanner Access */}
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={() => setShowEmergencyQRModal(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', borderColor: '#0ea5e9', color: '#0284c7', background: '#f0f9ff', fontSize: '0.8rem', fontWeight: 700 }}
-          title="Scan Patient QR"
-        >
-          <QrCode size={14} color="#0284c7" />
-          <span>Scan Patient QR</span>
-        </button>
+        {user?.role !== 'PATIENT' && (
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setShowEmergencyQRModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', borderColor: '#0ea5e9', color: '#0284c7', background: '#f0f9ff', fontSize: '0.8rem', fontWeight: 700 }}
+            title="Scan Patient QR"
+          >
+            <QrCode size={14} color="#0284c7" />
+            <span>Scan Patient QR</span>
+          </button>
+        )}
 
         {/* Current Authenticated Role Badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#f1f5f9', padding: '0.35rem 0.75rem', borderRadius: '9999px', fontSize: '0.8rem', color: '#334155' }}>

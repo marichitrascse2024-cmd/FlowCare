@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -14,8 +15,44 @@ from app.schemas.queue import QueueEntryOut
 from app.schemas.patient import PatientOut
 from app.routers.appointments import serialize_appointment
 from app.routers.queue import serialize_queue_entry
+from app.services.doctor_delay import calculate_doctor_delay_minutes
 
 router = APIRouter(prefix="/doctor", tags=["Doctor Dedicated Portal APIs"])
+
+@router.post("/check-in")
+def doctor_check_in(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([RoleEnum.DOCTOR]))
+):
+    """
+    Doctor Check-In API.
+    Records current date/time into last_check_in_at on the logged-in doctor profile.
+    Safe to repeat; updates existing timestamp on same-day check-in.
+    """
+    if not current_user.doctor_profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Doctor profile not found for current logged-in user."
+        )
+
+    doc = current_user.doctor_profile
+    now_utc = datetime.now(timezone.utc)
+
+    doc.last_check_in_at = now_utc
+    doc.is_available = True
+    doc.updated_at = now_utc
+
+    db.commit()
+    db.refresh(doc)
+
+    delay_mins = calculate_doctor_delay_minutes(doc, date.today())
+
+    return {
+        "message": "Doctor checked in successfully.",
+        "doctor_id": doc.id,
+        "check_in_time": doc.last_check_in_at,
+        "doctor_delay_minutes": delay_mins
+    }
 
 @router.get("/profile")
 def get_logged_in_doctor_profile(
@@ -26,6 +63,7 @@ def get_logged_in_doctor_profile(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Doctor profile not found.")
     
     doc = current_user.doctor_profile
+    delay_mins = calculate_doctor_delay_minutes(doc, date.today())
     return {
         "id": doc.id,
         "doctor_code": doc.doctor_code,
@@ -38,7 +76,9 @@ def get_logged_in_doctor_profile(
         "consultation_fee": doc.consultation_fee,
         "room_number": doc.room_number,
         "biography": doc.biography,
-        "is_available": doc.is_available
+        "is_available": doc.is_available,
+        "last_check_in_at": doc.last_check_in_at,
+        "doctor_delay_minutes": delay_mins
     }
 
 @router.get("/appointments", response_model=List[AppointmentOut])

@@ -14,6 +14,7 @@ import { PatientDashboard } from './pages/PatientDashboard';
 
 // Feature Pages
 import { AppointmentsPage } from './pages/AppointmentsPage';
+import { ScanSchedulingPage } from './pages/ScanSchedulingPage';
 import { QueuePage } from './pages/QueuePage';
 import { MedicalRecordsPage } from './pages/MedicalRecordsPage';
 import { PrescriptionsPage } from './pages/PrescriptionsPage';
@@ -71,6 +72,8 @@ export function App() {
     switch (activeTab) {
       case 'appointments':
         return <AppointmentsPage />;
+      case 'scan_scheduling':
+        return <ScanSchedulingPage />;
       case 'queue':
         return <QueuePage />;
       case 'medical_records':

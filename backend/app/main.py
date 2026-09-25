@@ -6,6 +6,8 @@ from app.core.config import settings
 from app.database.database import Base, engine
 from app.database.seed_data import seed_database
 
+from app.models.scan_schedule import ScanSchedule # Ensure ScanSchedule model is registered with SQLAlchemy Base metadata
+
 # Routers
 from app.routers import (
     auth,
@@ -24,7 +26,9 @@ from app.routers import (
     qr,
     disease_risk,
     recommendations,
-    sync
+    sync,
+    scan_schedules,
+    signaling
 )
 
 @asynccontextmanager
@@ -98,6 +102,8 @@ app.include_router(qr.router, prefix=settings.API_V1_STR)
 app.include_router(disease_risk.router, prefix=settings.API_V1_STR)
 app.include_router(recommendations.router, prefix=settings.API_V1_STR)
 app.include_router(sync.router, prefix=settings.API_V1_STR)
+app.include_router(scan_schedules.router, prefix=settings.API_V1_STR)
+app.include_router(signaling.router)
 
 @app.get("/")
 def root():

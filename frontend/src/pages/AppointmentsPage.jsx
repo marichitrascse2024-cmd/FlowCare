@@ -569,7 +569,14 @@ export const AppointmentsPage = () => {
                   </td>
                   <td>
                     <div style={{ fontWeight: 600 }}>{a.appointment_date}</div>
-                    <span style={{ fontSize: '0.8rem', color: '#475569' }}>{a.time_slot || a.appointment_time}</span>
+                    {a.doctor_delay_minutes > 0 && a.shifted_time_slot ? (
+                      <div style={{ fontSize: '0.8rem' }}>
+                        <div style={{ color: '#64748b', fontSize: '0.72rem', textDecoration: 'line-through' }}>Original: {a.time_slot || a.appointment_time}</div>
+                        <div style={{ color: '#d97706', fontWeight: 700 }}>Revised: {a.shifted_time_slot}</div>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: '0.8rem', color: '#475569' }}>{a.time_slot || a.appointment_time}</span>
+                    )}
                   </td>
                   <td><span className="badge badge-secondary">{a.appointment_type}</span></td>
                   <td>

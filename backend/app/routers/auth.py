@@ -181,7 +181,10 @@ def face_login(req: FaceLoginRequest, db: Session = Depends(get_db)):
         if not u.face_embedding:
             continue
         try:
-            stored_vector = face_service.deserialize_vector(u.face_embedding)
+            ver, stored_vector = face_service.deserialize_vector(u.face_embedding)
+            if ver != 2:
+                print(f"[FACE-LOGIN] Candidate {u.full_name} has legacy face template (v{ver}). Skipping legacy template.")
+                continue
             sim = face_service.compute_similarity(query_vector, stored_vector)
             print(f"[FACE-LOGIN] Comparison performed: yes | Candidate: {u.full_name} | Role: {u.role.value} | Similarity score: {sim:.4f}")
             if sim > best_sim:
@@ -191,7 +194,7 @@ def face_login(req: FaceLoginRequest, db: Session = Depends(get_db)):
             print(f"[FACE-LOGIN] Error comparing vector for candidate {u.id}: {ex}")
             continue
     
-    threshold = 0.68
+    threshold = face_service.FACE_SIMILARITY_THRESHOLD
     print(f"[FACE-LOGIN] Comparison summary -> Best Candidate: {best_user.full_name if best_user else 'None'} | Score: {best_sim:.4f} | Required Threshold: {threshold}")
 
     # Required threshold for match

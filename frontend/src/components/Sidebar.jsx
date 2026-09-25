@@ -27,6 +27,7 @@ export const Sidebar = ({ activeTab, setActiveTab }) => {
         return [
           { id: 'dashboard', label: 'Admin Dashboard', icon: LayoutDashboard },
           { id: 'appointments', label: 'Appointments', icon: Calendar },
+          { id: 'scan_scheduling', label: 'Scan Scheduling', icon: Activity },
           { id: 'queue', label: 'Live Queue & Tokens', icon: Clock },
           { id: 'patients', label: 'Patients', icon: Users },
           { id: 'doctors', label: 'Doctors', icon: Stethoscope },
@@ -40,6 +41,7 @@ export const Sidebar = ({ activeTab, setActiveTab }) => {
       case 'DOCTOR':
         return [
           { id: 'dashboard', label: 'Doctor Dashboard', icon: LayoutDashboard },
+          { id: 'scan_scheduling', label: 'Scan Scheduling', icon: Activity },
           { id: 'queue', label: 'Patient Queue', icon: Clock },
           { id: 'appointments', label: "Today's Schedule", icon: Calendar },
           { id: 'medical_records', label: 'Consultation Records', icon: FileText },
@@ -50,6 +52,7 @@ export const Sidebar = ({ activeTab, setActiveTab }) => {
       case 'RECEPTIONIST':
         return [
           { id: 'dashboard', label: 'Reception Dashboard', icon: LayoutDashboard },
+          { id: 'scan_scheduling', label: 'Scan Scheduling', icon: Activity },
           { id: 'queue', label: 'Check-In & Queue', icon: Clock },
           { id: 'appointments', label: 'Appointment Desk', icon: Calendar },
           { id: 'patients', label: 'Patient Registration', icon: UserPlus },
@@ -60,6 +63,7 @@ export const Sidebar = ({ activeTab, setActiveTab }) => {
       case 'NURSE':
         return [
           { id: 'dashboard', label: 'Nurse Station', icon: LayoutDashboard },
+          { id: 'scan_scheduling', label: 'Scan Scheduling', icon: Activity },
           { id: 'queue', label: 'Queue & Triage', icon: Clock },
           { id: 'appointments', label: 'Appointments', icon: Calendar },
           { id: 'patients', label: 'Assigned Patients', icon: Users },
@@ -70,6 +74,7 @@ export const Sidebar = ({ activeTab, setActiveTab }) => {
       default:
         return [
           { id: 'dashboard', label: 'My Health Portal', icon: LayoutDashboard },
+          { id: 'scan_scheduling', label: 'Scan Scheduling', icon: Activity },
           { id: 'appointments', label: 'Book Appointment', icon: Calendar },
           { id: 'queue', label: 'Live Queue & Token', icon: Clock },
           { id: 'medical_records', label: 'My Medical Records', icon: FileText },

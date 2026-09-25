@@ -54,6 +54,7 @@ class DoctorOut(DoctorBase):
     full_name: str
     email: str
     phone: Optional[str] = None
+    last_check_in_at: Optional[datetime] = None
     schedules: List[DoctorScheduleOut] = []
     created_at: datetime
     updated_at: datetime

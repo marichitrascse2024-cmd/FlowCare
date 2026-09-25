@@ -42,6 +42,8 @@ class AppointmentOut(AppointmentBase):
     ai_suggested: Optional[str] = "NO"
     queue_token: Optional[str] = None
     queue_status: Optional[str] = None
+    doctor_delay_minutes: Optional[int] = 0
+    shifted_time_slot: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

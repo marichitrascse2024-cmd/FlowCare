@@ -9,6 +9,7 @@ from app.models.appointment import Appointment, AppointmentStatusEnum
 from app.models.patient import Patient
 from app.schemas.appointment import AppointmentCreate, AppointmentUpdate, AppointmentOut
 from app.services.appointment_service import appointment_service
+from app.services.doctor_delay import calculate_doctor_delay_minutes, shift_time_slot
 
 router = APIRouter(prefix="/appointments", tags=["Appointment Management"])
 
@@ -21,6 +22,10 @@ def serialize_appointment(a: Appointment) -> AppointmentOut:
     pat_name = a.patient.user.full_name if (a.patient and a.patient.user) else "Patient"
     pat_code = a.patient.patient_code if a.patient else ""
     pat_phone = a.patient.user.phone if (a.patient and a.patient.user) else None
+
+    # Calculate dynamic doctor delay in minutes and shifted time slot
+    doc_delay = calculate_doctor_delay_minutes(a.doctor, a.appointment_date) if a.doctor else 0
+    shifted_slot = shift_time_slot(a.time_slot, doc_delay)
 
     return AppointmentOut(
         id=a.id,
@@ -46,6 +51,8 @@ def serialize_appointment(a: Appointment) -> AppointmentOut:
         ai_suggested=a.ai_suggested or "NO",
         queue_token=a.queue_entry.token_number if a.queue_entry else None,
         queue_status=a.queue_entry.status.value if a.queue_entry else None,
+        doctor_delay_minutes=doc_delay,
+        shifted_time_slot=shifted_slot,
         created_at=a.created_at,
         updated_at=a.updated_at
     )

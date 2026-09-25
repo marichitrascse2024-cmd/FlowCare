@@ -9,6 +9,12 @@ export default function QRCodeModal({ patientId, patientName, patientCode, isOpe
   const [error, setError] = useState(null);
 
   const fetchQRCode = async (forceRegenerate = false) => {
+    const validId = Number(patientId);
+    if (!patientId || isNaN(validId) || validId <= 0) {
+      setLoading(false);
+      setError('Valid Patient ID is required to fetch QR code.');
+      return;
+    }
     try {
       if (forceRegenerate) {
         setRefreshing(true);
@@ -18,8 +24,8 @@ export default function QRCodeModal({ patientId, patientName, patientCode, isOpe
       setError(null);
       
       const res = forceRegenerate 
-        ? await api.regeneratePatientQRCode(patientId)
-        : await api.getPatientQRCode(patientId);
+        ? await api.regeneratePatientQRCode(validId)
+        : await api.getPatientQRCode(validId);
       
       setQrData(res);
     } catch (err) {
@@ -31,7 +37,8 @@ export default function QRCodeModal({ patientId, patientName, patientCode, isOpe
   };
 
   useEffect(() => {
-    if (isOpen && patientId) {
+    const validId = Number(patientId);
+    if (isOpen && patientId && !isNaN(validId) && validId > 0) {
       fetchQRCode();
     }
   }, [isOpen, patientId]);
