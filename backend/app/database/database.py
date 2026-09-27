@@ -29,12 +29,16 @@ def init_mysql_db():
         return False
 
 def get_engine():
-    """Create SQLAlchemy engine with MySQL or SQLite fallback."""
-    mysql_ready = init_mysql_db()
-    
-    if mysql_ready or settings.DATABASE_URL.startswith("mysql"):
+    """Create SQLAlchemy engine with PostgreSQL, MySQL, or local SQLite fallback."""
+    db_url = settings.get_database_url()
+
+    # 1. If DATABASE_URL is explicitly configured (e.g. Render PostgreSQL or external DB)
+    if settings.DATABASE_URL:
         try:
-            db_url = settings.get_database_url()
+            if db_url.startswith("mysql://") and "pymysql" not in db_url:
+                db_url = db_url.replace("mysql://", "mysql+pymysql://", 1)
+
+            logger.info("Connecting to production database via DATABASE_URL...")
             engine = create_engine(
                 db_url,
                 pool_pre_ping=True,
@@ -44,16 +48,34 @@ def get_engine():
             # Test connection
             with engine.connect() as conn:
                 pass
-            logger.info("Successfully connected to MySQL database.")
+            logger.info("Successfully connected to database via DATABASE_URL.")
             return engine
         except Exception as e:
-            logger.error(f"Failed to connect to MySQL with URL. Falling back to SQLite for local development: {e}")
-    
-    # Fallback to SQLite
+            logger.error(f"FATAL: DATABASE_URL was configured, but database connection failed: {e}")
+            raise RuntimeError(f"Failed to connect to configured DATABASE_URL: {e}") from e
+
+    # 2. Check for local/direct MySQL connection if no DATABASE_URL is configured
+    mysql_ready = init_mysql_db()
+    if mysql_ready:
+        try:
+            engine = create_engine(
+                db_url,
+                pool_pre_ping=True,
+                pool_recycle=3600,
+                echo=False
+            )
+            with engine.connect() as conn:
+                pass
+            logger.info("Successfully connected to local MySQL database.")
+            return engine
+        except Exception as e:
+            logger.warning(f"Could not connect to local MySQL database: {e}")
+
+    # 3. Fallback to SQLite for local development only
     import os
     db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "flowcare.db")).replace("\\", "/")
     sqlite_url = f"sqlite:///{db_path}"
-    logger.info(f"Using SQLite database at {sqlite_url}")
+    logger.info(f"Using local SQLite database at {sqlite_url}")
     return create_engine(
         sqlite_url,
         connect_args={"check_same_thread": False},

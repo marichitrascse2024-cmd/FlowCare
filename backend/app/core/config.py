@@ -49,7 +49,10 @@ class Settings(BaseSettings):
 
     def get_database_url(self) -> str:
         if self.DATABASE_URL:
-            return self.DATABASE_URL
+            url = self.DATABASE_URL
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            return url
         if self.MYSQL_PASSWORD:
             return f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DB}?charset=utf8mb4"
         else:
