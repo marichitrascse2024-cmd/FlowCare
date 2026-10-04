@@ -30,6 +30,28 @@ class Settings(BaseSettings):
     CLOUD_ENDPOINT_URL: str = os.getenv("CLOUD_ENDPOINT_URL", "https://cloud-sync.flowcare-hospital.demo/api/v1")
     CLOUD_API_KEY: str = os.getenv("CLOUD_API_KEY", "flowcare_cloud_sync_api_key_2026_demo")
 
+    # WebRTC / TURN Configuration
+    TURN_ENABLED: bool = os.getenv("TURN_ENABLED", "false").lower() in ("true", "1", "yes")
+    TURN_URLS: str = os.getenv("TURN_URLS", "")
+    TURN_SECRET: str = os.getenv("TURN_SECRET", "")
+    TURN_CREDENTIAL_TTL: int = int(os.getenv("TURN_CREDENTIAL_TTL", "86400"))
+
+    @property
+    def parsed_turn_urls(self) -> List[str]:
+        raw = self.TURN_URLS.strip()
+        if not raw:
+            return []
+        if raw.startswith("[") and raw.endswith("]"):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            except Exception:
+                pass
+        if "," in raw:
+            return [i.strip() for i in raw.split(",") if i.strip()]
+        return [raw]
+
     # CORS Configuration
     @property
     def CORS_ORIGINS(self) -> List[str]:

@@ -251,6 +251,42 @@ def test_webrtc_signaling_websocket():
 
     print("[PASS] test_webrtc_signaling_websocket (WebSocket signaling room & WebRTC relay verified)")
 
+def test_ice_servers_endpoint():
+    from app.core.config import settings
+
+    # 1. Default disabled TURN behavior -> Only STUN returned
+    res = client.get("/api/webrtc/ice-servers")
+    assert res.status_code == 200
+    data = res.json()
+    assert "iceServers" in data
+    assert len(data["iceServers"]) == 1
+    assert "stun:stun.l.google.com:19302" in data["iceServers"][0]["urls"]
+
+    # 2. Enabled TURN behavior -> STUN + Ephemeral TURN credentials returned
+    orig_enabled = settings.TURN_ENABLED
+    orig_urls = settings.TURN_URLS
+    orig_secret = settings.TURN_SECRET
+    try:
+        settings.TURN_ENABLED = True
+        settings.TURN_URLS = "turn:turn.flowcare-test.org:3478?transport=udp,turn:turn.flowcare-test.org:3478?transport=tcp"
+        settings.TURN_SECRET = "test_shared_secret_12345"
+
+        res_turn = client.get("/api/webrtc/ice-servers")
+        assert res_turn.status_code == 200
+        data_turn = res_turn.json()
+        assert len(data_turn["iceServers"]) == 2
+        turn_entry = data_turn["iceServers"][1]
+        assert "turn:turn.flowcare-test.org:3478?transport=udp" in turn_entry["urls"]
+        assert "username" in turn_entry
+        assert "credential" in turn_entry
+        assert ":" in turn_entry["username"]
+    finally:
+        settings.TURN_ENABLED = orig_enabled
+        settings.TURN_URLS = orig_urls
+        settings.TURN_SECRET = orig_secret
+
+    print("[PASS] test_ice_servers_endpoint (STUN-only default & Ephemeral TURN auth verified)")
+
 if __name__ == "__main__":
     print("Running FlowCare Backend Integration Tests...")
     test_root_endpoint()
@@ -267,6 +303,7 @@ if __name__ == "__main__":
     test_doctor_delay_calculation()
     test_shifted_time_slot_calculation()
     test_webrtc_signaling_websocket()
+    test_ice_servers_endpoint()
     print("==================================================")
-    print("ALL 14 FLOWCARE BACKEND TESTS PASSED PERFECTLY!")
+    print("ALL 15 FLOWCARE BACKEND TESTS PASSED PERFECTLY!")
     print("==================================================")

@@ -1,9 +1,48 @@
 from typing import Dict, List
 import json
+import time
+import hmac
+import hashlib
+import base64
+import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
+from app.core.config import settings
 
 router = APIRouter(tags=["WebRTC Teleconsultation Signaling"])
+
+@router.get("/api/webrtc/ice-servers")
+def get_ice_servers():
+    """
+    Returns ICE server configurations (STUN and ephemeral TURN credentials if enabled).
+    Uses coturn shared-secret (REST API) authentication mechanism for time-limited credentials.
+    """
+    ice_servers = [
+        {
+            "urls": [
+                "stun:stun.l.google.com:19302",
+                "stun:stun1.l.google.com:19302"
+            ]
+        }
+    ]
+
+    if settings.TURN_ENABLED and settings.TURN_SECRET and settings.parsed_turn_urls:
+        ttl = settings.TURN_CREDENTIAL_TTL
+        expiry = int(time.time()) + ttl
+        username = f"{expiry}:{uuid.uuid4().hex[:8]}"
+
+        key = settings.TURN_SECRET.encode('utf-8')
+        msg = username.encode('utf-8')
+        digest = hmac.new(key, msg, hashlib.sha1).digest()
+        credential = base64.b64encode(digest).decode('utf-8')
+
+        ice_servers.append({
+            "urls": settings.parsed_turn_urls,
+            "username": username,
+            "credential": credential
+        })
+
+    return {"iceServers": ice_servers}
 
 class ConnectionManager:
     def __init__(self):

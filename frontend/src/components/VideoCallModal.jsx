@@ -46,6 +46,7 @@ export const VideoCallModal = ({
   const [cameraError, setCameraError] = useState('');
   const [callDuration, setCallDuration] = useState(0);
   const [isLocalStreamReady, setIsLocalStreamReady] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('initializing');
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -54,6 +55,13 @@ export const VideoCallModal = ({
   const wsRef = useRef(null);
   const localStreamRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
+  const outboundCandidatesRef = useRef([]);
+  const restartCountRef = useRef(0);
+  const isRestartingRef = useRef(false);
+  const makingOfferRef = useRef(false);
+  const ignoreOfferRef = useRef(false);
+
+  const isPolite = userRole === 'DOCTOR';
 
   // Comprehensive Call Teardown & Reset Helper
   const cleanupCall = () => {
@@ -73,6 +81,8 @@ export const VideoCallModal = ({
     if (peerConnectionRef.current) {
       peerConnectionRef.current.ontrack = null;
       peerConnectionRef.current.onicecandidate = null;
+      peerConnectionRef.current.oniceconnectionstatechange = null;
+      peerConnectionRef.current.onconnectionstatechange = null;
       try {
         peerConnectionRef.current.close();
       } catch (e) {}
@@ -97,11 +107,17 @@ export const VideoCallModal = ({
     }
 
     pendingCandidatesRef.current = [];
+    outboundCandidatesRef.current = [];
+    restartCountRef.current = 0;
+    isRestartingRef.current = false;
+    makingOfferRef.current = false;
+    ignoreOfferRef.current = false;
     setPeerRemoteStream(null);
     setIsMicMuted(false);
     setIsVideoOff(false);
     setCallDuration(0);
     setCameraError('');
+    setConnectionStatus('initializing');
   };
 
   // Helper to construct WebSocket signaling URL
@@ -121,11 +137,44 @@ export const VideoCallModal = ({
     return `${wsProtocol}://${window.location.host}/ws/video-call/${appId}`;
   };
 
+  // ICE Restart helper with max retries to prevent infinite loops
+  const handleIceRestart = async () => {
+    const pc = peerConnectionRef.current;
+    if (!pc || isRestartingRef.current || restartCountRef.current >= 2) {
+      if (restartCountRef.current >= 2) {
+        setConnectionStatus('failed');
+      }
+      return;
+    }
+    isRestartingRef.current = true;
+    restartCountRef.current += 1;
+    console.log(`[WebRTC] Attempting ICE restart (${restartCountRef.current}/2)...`);
+    try {
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'offer',
+            offer: offer,
+            sdp: offer.sdp
+          })
+        );
+      }
+    } catch (err) {
+      console.error('[WebRTC] ICE restart failed:', err);
+    } finally {
+      isRestartingRef.current = false;
+    }
+  };
+
   // Initialize or reset WebRTC PeerConnection instance
   const initPeerConnection = () => {
     if (peerConnectionRef.current) {
       peerConnectionRef.current.ontrack = null;
       peerConnectionRef.current.onicecandidate = null;
+      peerConnectionRef.current.oniceconnectionstatechange = null;
+      peerConnectionRef.current.onconnectionstatechange = null;
       try {
         peerConnectionRef.current.close();
       } catch (e) {}
@@ -135,27 +184,57 @@ export const VideoCallModal = ({
     try {
       const pc = new RTCPeerConnection(rtcConfig);
 
+      // ICE Connection State Monitoring
+      pc.oniceconnectionstatechange = () => {
+        console.log('[WebRTC] ICE Connection State:', pc.iceConnectionState);
+        if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+          setConnectionStatus('connected');
+        } else if (pc.iceConnectionState === 'checking') {
+          setConnectionStatus('connecting');
+        } else if (pc.iceConnectionState === 'disconnected') {
+          setConnectionStatus('reconnecting');
+        } else if (pc.iceConnectionState === 'failed') {
+          setConnectionStatus('failed');
+          handleIceRestart();
+        }
+      };
+
+      // Peer Connection State Monitoring
+      pc.onconnectionstatechange = () => {
+        console.log('[WebRTC] Connection State:', pc.connectionState);
+        if (pc.connectionState === 'connected') {
+          setConnectionStatus('connected');
+        } else if (pc.connectionState === 'failed') {
+          setConnectionStatus('failed');
+          handleIceRestart();
+        } else if (pc.connectionState === 'disconnected') {
+          setConnectionStatus('disconnected');
+        }
+      };
+
       // Handle remote media track reception
       pc.ontrack = (event) => {
         if (event.streams && event.streams[0]) {
-          setPeerRemoteStream(event.streams[0]);
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = event.streams[0];
+          const incomingStream = event.streams[0];
+          setPeerRemoteStream(incomingStream);
+          if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== incomingStream) {
+            remoteVideoRef.current.srcObject = incomingStream;
           }
         }
       };
 
-      // Handle ICE Candidates and relay over WebSocket
+      // Handle ICE Candidates and relay over WebSocket or buffer outbound
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           if (onIceCandidate) onIceCandidate(event.candidate);
+          const payload = JSON.stringify({
+            type: 'ice-candidate',
+            candidate: event.candidate
+          });
           if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(
-              JSON.stringify({
-                type: 'ice-candidate',
-                candidate: event.candidate
-              })
-            );
+            wsRef.current.send(payload);
+          } else {
+            outboundCandidatesRef.current.push(payload);
           }
         }
       };
@@ -200,8 +279,10 @@ export const VideoCallModal = ({
       pc = setupFreshPeerConnection();
     }
     if (!pc || pc.signalingState !== 'stable') return;
+    makingOfferRef.current = true;
     try {
       const offer = await pc.createOffer();
+      if (pc.signalingState !== 'stable') return;
       await pc.setLocalDescription(offer);
       if (onOfferCreated) onOfferCreated(offer);
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -215,6 +296,8 @@ export const VideoCallModal = ({
       }
     } catch (err) {
       console.error('Error creating WebRTC offer:', err);
+    } finally {
+      makingOfferRef.current = false;
     }
   };
 
@@ -242,6 +325,12 @@ export const VideoCallModal = ({
       ws.onopen = () => {
         if (isMounted) {
           console.log(`[WebSocket] Connected to signaling room for appointment #${activeAppointmentId}`);
+          setConnectionStatus('connecting');
+          // Flush outbound ICE candidates gathered before WS opened
+          while (outboundCandidatesRef.current.length > 0) {
+            const payload = outboundCandidatesRef.current.shift();
+            ws.send(payload);
+          }
         }
       };
 
@@ -263,10 +352,21 @@ export const VideoCallModal = ({
             case 'offer':
               console.log('[WebSocket] WebRTC offer received from peer.');
               let pcOffer = peerConnectionRef.current;
-              if (!pcOffer || pcOffer.signalingState === 'closed' || pcOffer.signalingState !== 'stable') {
+              if (!pcOffer || pcOffer.signalingState === 'closed') {
                 pcOffer = setupFreshPeerConnection();
               }
               if (!pcOffer) return;
+
+              // Perfect Negotiation / Polite Peer Glare Handling
+              const offerCollision = (data.type === 'offer') &&
+                (makingOfferRef.current || pcOffer.signalingState !== 'stable');
+
+              ignoreOfferRef.current = !isPolite && offerCollision;
+              if (ignoreOfferRef.current) {
+                console.log('[WebRTC Glare] Impolite peer ignoring colliding offer.');
+                return;
+              }
+
               const offerDesc = data.offer || { type: 'offer', sdp: data.sdp };
               await pcOffer.setRemoteDescription(new RTCSessionDescription(offerDesc));
 
@@ -320,6 +420,7 @@ export const VideoCallModal = ({
             case 'peer-left':
               console.log('[WebSocket] Peer left signaling room.');
               setPeerRemoteStream(null);
+              setConnectionStatus('disconnected');
               if (remoteVideoRef.current) {
                 remoteVideoRef.current.srcObject = null;
               }
@@ -475,15 +576,37 @@ export const VideoCallModal = ({
     };
   }, [isOpen]);
 
+  // Status Badge UI configuration helper
+  const getStatusBadgeConfig = (status) => {
+    switch (status) {
+      case 'connected':
+        return { label: 'Connected (Encrypted)', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.2)' };
+      case 'connecting':
+        return { label: 'Connecting...', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)', border: 'rgba(245, 158, 11, 0.3)' };
+      case 'reconnecting':
+        return { label: 'Reconnecting...', color: '#f97316', bg: 'rgba(249, 115, 22, 0.1)', border: 'rgba(249, 115, 22, 0.3)' };
+      case 'failed':
+        return { label: 'Connection Failed. Please try again.', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.3)' };
+      case 'disconnected':
+        return { label: 'Peer Disconnected', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.1)', border: 'rgba(148, 163, 184, 0.3)' };
+      default:
+        return { label: 'Initializing Call', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.1)', border: 'rgba(56, 189, 248, 0.2)' };
+    }
+  };
+
   // Connect remote stream if provided via prop or peer connection
   const activeRemoteStream = remoteStream || peerRemoteStream;
 
   useEffect(() => {
     if (activeRemoteStream && remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = activeRemoteStream;
-      remoteVideoRef.current.play().catch((err) => {
-        console.warn('Autoplay prevented for remote audio/video stream:', err);
-      });
+      if (remoteVideoRef.current.srcObject !== activeRemoteStream) {
+        remoteVideoRef.current.srcObject = activeRemoteStream;
+      }
+      if (remoteVideoRef.current.paused) {
+        remoteVideoRef.current.play().catch((err) => {
+          console.warn('Autoplay prevented for remote audio/video stream:', err);
+        });
+      }
     }
   }, [activeRemoteStream]);
 
@@ -646,22 +769,28 @@ export const VideoCallModal = ({
               <span>{formatDuration(callDuration)}</span>
             </div>
 
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                fontSize: '0.75rem',
-                color: '#10b981',
-                background: 'rgba(16, 185, 129, 0.1)',
-                padding: '0.35rem 0.75rem',
-                borderRadius: '0.5rem',
-                border: '1px solid rgba(16, 185, 129, 0.2)'
-              }}
-            >
-              <ShieldCheck size={14} />
-              <span>WebRTC Encrypted</span>
-            </div>
+            {(() => {
+              const badge = getStatusBadgeConfig(connectionStatus);
+              return (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    fontSize: '0.75rem',
+                    color: badge.color,
+                    background: badge.bg,
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '0.5rem',
+                    border: `1px solid ${badge.border}`,
+                    transition: 'all 0.3s ease'
+                  }}
+                >
+                  <ShieldCheck size={14} color={badge.color} />
+                  <span>{badge.label}</span>
+                </div>
+              );
+            })()}
 
             <button
               onClick={handleEndCall}
