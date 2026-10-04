@@ -343,10 +343,12 @@ export const VideoCallModal = ({
             case 'peer-joined':
               console.log('[WebSocket] Peer joined notification received.');
               let pcJoined = peerConnectionRef.current;
-              if (!pcJoined || pcJoined.signalingState === 'closed' || pcJoined.signalingState !== 'stable') {
+              if (!pcJoined || pcJoined.signalingState === 'closed') {
                 pcJoined = setupFreshPeerConnection();
               }
-              await createAndSendOffer();
+              if (pcJoined && pcJoined.signalingState === 'stable') {
+                await createAndSendOffer();
+              }
               break;
 
             case 'offer':
@@ -365,6 +367,11 @@ export const VideoCallModal = ({
               if (ignoreOfferRef.current) {
                 console.log('[WebRTC Glare] Impolite peer ignoring colliding offer.');
                 return;
+              }
+
+              if (isPolite && offerCollision) {
+                console.log('[WebRTC Glare] Polite peer rolling back local offer for incoming remote offer.');
+                await pcOffer.setLocalDescription({ type: 'rollback' });
               }
 
               const offerDesc = data.offer || { type: 'offer', sdp: data.sdp };
@@ -394,6 +401,12 @@ export const VideoCallModal = ({
               console.log('[WebSocket] WebRTC answer received from peer.');
               const pcAnswer = peerConnectionRef.current;
               if (!pcAnswer || pcAnswer.signalingState === 'closed') return;
+
+              if (pcAnswer.signalingState !== 'have-local-offer') {
+                console.warn(`[WebRTC] Ignoring answer because signalingState is '${pcAnswer.signalingState}' (expected 'have-local-offer').`);
+                return;
+              }
+
               const answerDesc = data.answer || { type: 'answer', sdp: data.sdp };
               await pcAnswer.setRemoteDescription(new RTCSessionDescription(answerDesc));
 
