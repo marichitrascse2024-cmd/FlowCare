@@ -47,6 +47,7 @@ export const VideoCallModal = ({
   const [callDuration, setCallDuration] = useState(0);
   const [isLocalStreamReady, setIsLocalStreamReady] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('initializing');
+  const [audioAutoplayBlocked, setAudioAutoplayBlocked] = useState(false);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -115,6 +116,7 @@ export const VideoCallModal = ({
     setPeerRemoteStream(null);
     setIsMicMuted(false);
     setIsVideoOff(false);
+    setAudioAutoplayBlocked(false);
     setCallDuration(0);
     setCameraError('');
     setConnectionStatus('initializing');
@@ -133,8 +135,8 @@ export const VideoCallModal = ({
       const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
       return `${wsProtocol}://${window.location.hostname}:8000/ws/video-call/${appId}`;
     }
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${wsProtocol}://${window.location.host}/ws/video-call/${appId}`;
+    // In production without VITE_API_BASE_URL, connect directly to the live Render WebSocket backend
+    return `wss://flowcare-backend-afhb.onrender.com/ws/video-call/${appId}`;
   };
 
   // ICE Restart helper with max retries to prevent infinite loops
@@ -616,12 +618,26 @@ export const VideoCallModal = ({
         remoteVideoRef.current.srcObject = activeRemoteStream;
       }
       if (remoteVideoRef.current.paused) {
-        remoteVideoRef.current.play().catch((err) => {
+        remoteVideoRef.current.play().then(() => {
+          setAudioAutoplayBlocked(false);
+        }).catch((err) => {
           console.warn('Autoplay prevented for remote audio/video stream:', err);
+          setAudioAutoplayBlocked(true);
         });
       }
     }
   }, [activeRemoteStream]);
+
+  // Enable remote audio on explicit user interaction if autoplay was blocked
+  const handleEnableAudio = () => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.play().then(() => {
+        setAudioAutoplayBlocked(false);
+      }).catch((err) => {
+        console.error('Error enabling remote audio playback:', err);
+      });
+    }
+  };
 
   // Handle camera device switch
   const handleCameraChange = (e) => {
@@ -868,16 +884,45 @@ export const VideoCallModal = ({
             <>
               {/* Remote Stream Video Area */}
               {activeRemoteStream ? (
-                <video
-                  ref={remoteVideoRef}
-                  autoPlay
-                  playsInline
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover'
-                  }}
-                />
+                <>
+                  <video
+                    ref={remoteVideoRef}
+                    autoPlay
+                    playsInline
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover'
+                    }}
+                  />
+                  {audioAutoplayBlocked && (
+                    <button
+                      onClick={handleEnableAudio}
+                      style={{
+                        position: 'absolute',
+                        top: '1.5rem',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 10,
+                        background: '#0284c7',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '2rem',
+                        padding: '0.65rem 1.35rem',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        boxShadow: '0 4px 16px rgba(2, 132, 199, 0.6)'
+                      }}
+                    >
+                      <Volume2 size={18} />
+                      <span>Enable Audio</span>
+                    </button>
+                  )}
+                </>
               ) : (
                 <div
                   style={{
