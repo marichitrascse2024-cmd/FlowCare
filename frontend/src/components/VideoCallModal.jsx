@@ -51,6 +51,7 @@ export const VideoCallModal = ({
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
   const timerRef = useRef(null);
   const peerConnectionRef = useRef(null);
   const wsRef = useRef(null);
@@ -103,6 +104,9 @@ export const VideoCallModal = ({
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null;
+    }
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = null;
     }
@@ -139,18 +143,19 @@ export const VideoCallModal = ({
     return `wss://flowcare-backend-afhb.onrender.com/ws/video-call/${appId}`;
   };
 
-  // ICE Restart helper with max retries to prevent infinite loops
+  // ICE Restart helper with max retries and debounce to prevent infinite loops
   const handleIceRestart = async () => {
     const pc = peerConnectionRef.current;
-    if (!pc || isRestartingRef.current || restartCountRef.current >= 2) {
-      if (restartCountRef.current >= 2) {
-        setConnectionStatus('failed');
-      }
+    if (!pc || isRestartingRef.current) return;
+    if (restartCountRef.current >= 3) {
+      console.warn('[WebRTC] Maximum ICE restart attempts reached (3/3).');
+      setConnectionStatus('failed');
       return;
     }
     isRestartingRef.current = true;
     restartCountRef.current += 1;
-    console.log(`[WebRTC] Attempting ICE restart (${restartCountRef.current}/2)...`);
+    setConnectionStatus('reconnecting');
+    console.log(`[WebRTC] Attempting ICE restart (${restartCountRef.current}/3)...`);
     try {
       const offer = await pc.createOffer({ iceRestart: true });
       await pc.setLocalDescription(offer);
@@ -166,7 +171,10 @@ export const VideoCallModal = ({
     } catch (err) {
       console.error('[WebRTC] ICE restart failed:', err);
     } finally {
-      isRestartingRef.current = false;
+      // 3-second debounce before allowing another restart attempt
+      setTimeout(() => {
+        isRestartingRef.current = false;
+      }, 3000);
     }
   };
 
@@ -191,12 +199,12 @@ export const VideoCallModal = ({
         console.log('[WebRTC] ICE Connection State:', pc.iceConnectionState);
         if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
           setConnectionStatus('connected');
+          restartCountRef.current = 0; // Reset restart counter on successful connection
         } else if (pc.iceConnectionState === 'checking') {
           setConnectionStatus('connecting');
         } else if (pc.iceConnectionState === 'disconnected') {
           setConnectionStatus('reconnecting');
         } else if (pc.iceConnectionState === 'failed') {
-          setConnectionStatus('failed');
           handleIceRestart();
         }
       };
@@ -206,22 +214,37 @@ export const VideoCallModal = ({
         console.log('[WebRTC] Connection State:', pc.connectionState);
         if (pc.connectionState === 'connected') {
           setConnectionStatus('connected');
-        } else if (pc.connectionState === 'failed') {
-          setConnectionStatus('failed');
-          handleIceRestart();
+          restartCountRef.current = 0; // Reset restart counter on successful connection
         } else if (pc.connectionState === 'disconnected') {
-          setConnectionStatus('disconnected');
+          setConnectionStatus('reconnecting');
+        } else if (pc.connectionState === 'failed') {
+          handleIceRestart();
         }
       };
 
-      // Handle remote media track reception
+      // Handle remote media track reception (audio and video streams)
       pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          const incomingStream = event.streams[0];
-          setPeerRemoteStream(incomingStream);
-          if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== incomingStream) {
-            remoteVideoRef.current.srcObject = incomingStream;
-          }
+        console.log('[WebRTC] Remote media track received:', event.track.kind);
+        const incomingStream = (event.streams && event.streams[0])
+          ? event.streams[0]
+          : new MediaStream([event.track]);
+
+        setPeerRemoteStream(incomingStream);
+
+        // Attach video track to remote video element
+        if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== incomingStream) {
+          remoteVideoRef.current.srcObject = incomingStream;
+        }
+
+        // Attach to dedicated remote audio element for reliable audio decoding
+        if (remoteAudioRef.current && remoteAudioRef.current.srcObject !== incomingStream) {
+          remoteAudioRef.current.srcObject = incomingStream;
+          remoteAudioRef.current.play().then(() => {
+            setAudioAutoplayBlocked(false);
+          }).catch((err) => {
+            console.warn('[WebRTC] Remote audio autoplay blocked by browser policy:', err);
+            setAudioAutoplayBlocked(true);
+          });
         }
       };
 
@@ -613,15 +636,23 @@ export const VideoCallModal = ({
   const activeRemoteStream = remoteStream || peerRemoteStream;
 
   useEffect(() => {
-    if (activeRemoteStream && remoteVideoRef.current) {
-      if (remoteVideoRef.current.srcObject !== activeRemoteStream) {
+    if (activeRemoteStream) {
+      if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== activeRemoteStream) {
         remoteVideoRef.current.srcObject = activeRemoteStream;
       }
-      if (remoteVideoRef.current.paused) {
-        remoteVideoRef.current.play().then(() => {
+      if (remoteAudioRef.current && remoteAudioRef.current.srcObject !== activeRemoteStream) {
+        remoteAudioRef.current.srcObject = activeRemoteStream;
+      }
+      if (remoteVideoRef.current && remoteVideoRef.current.paused) {
+        remoteVideoRef.current.play().catch((err) => {
+          console.warn('[WebRTC] Video play deferred:', err);
+        });
+      }
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.play().then(() => {
           setAudioAutoplayBlocked(false);
         }).catch((err) => {
-          console.warn('Autoplay prevented for remote audio/video stream:', err);
+          console.warn('[WebRTC] Remote audio autoplay blocked by browser policy:', err);
           setAudioAutoplayBlocked(true);
         });
       }
@@ -630,12 +661,15 @@ export const VideoCallModal = ({
 
   // Enable remote audio on explicit user interaction if autoplay was blocked
   const handleEnableAudio = () => {
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.play().then(() => {
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.play().then(() => {
         setAudioAutoplayBlocked(false);
       }).catch((err) => {
         console.error('Error enabling remote audio playback:', err);
       });
+    }
+    if (remoteVideoRef.current && remoteVideoRef.current.paused) {
+      remoteVideoRef.current.play().catch(() => {});
     }
   };
 
@@ -882,6 +916,9 @@ export const VideoCallModal = ({
             </div>
           ) : (
             <>
+              {/* Dedicated Remote Audio Element for independent, reliable audio decoding */}
+              <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
+
               {/* Remote Stream Video Area */}
               {activeRemoteStream ? (
                 <>
